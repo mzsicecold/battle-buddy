@@ -1,98 +1,250 @@
-import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { useState } from 'react';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { AnimatedIcon } from '@/components/animated-icon';
-import { HintRow } from '@/components/hint-row';
+import { BBButton } from '@/components/bb/bb-button';
+import { Card } from '@/components/bb/card';
+import { ChipSelect } from '@/components/bb/chip-select';
+import { Field } from '@/components/bb/field';
+import { EmptyNote, ListRow } from '@/components/bb/list-row';
+import { ScreenHeader } from '@/components/bb/screen-header';
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { BottomTabInset, Spacing } from '@/constants/theme';
+import { useVault } from '@/context/vault-context';
+import { AwardEntry, BulletCategory, BulletEntry, DateEntry, uid } from '@/lib/app-data';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+const BRANCHES = ['Army', 'Navy', 'Air Force', 'Marine Corps', 'Space Force', 'Coast Guard'] as const;
+const COMPONENTS = ['Active Duty', 'Reserve', 'National Guard'] as const;
+const BULLET_CATEGORIES: readonly BulletCategory[] = ['Leadership', 'Training', 'Community', 'Mission Impact'];
+
+const PUBS: Record<string, [string, string][]> = {
+  Army: [
+    ['AR 600-8-19', 'Enlisted Promotions & Reductions'],
+    ['DA PAM 623-3', 'Evaluation Reporting System'],
+    ['AR 670-1', 'Wear & Appearance of Uniforms'],
+    ['AR 600-8-22', 'Military Awards'],
+  ],
+  Navy: [
+    ['MILPERSMAN 1610', 'Performance Evaluations'],
+    ['NAVPERS 15665', 'Uniform Regulations'],
+    ['SECNAVINST 1650.1', 'Navy & Marine Corps Awards Manual'],
+  ],
+  'Air Force': [
+    ['DAFI 36-2406', 'Enlisted / Officer Evaluations'],
+    ['DAFI 36-2903', 'Dress & Personal Appearance'],
+    ['DAFI 36-2803', 'Air Force Awards & Decorations'],
+  ],
+  'Marine Corps': [
+    ['MCO 1610.7', 'Performance Evaluation System'],
+    ['MCO P1020.34', 'Marine Corps Uniform Regs'],
+    ['MCO 1650.19', 'Personal Awards Manual'],
+  ],
+  'Space Force': [
+    ['DAFI 36-2406', 'Enlisted / Officer Evaluations (DAF)'],
+    ['DAFI 36-2903', 'Dress & Personal Appearance (DAF)'],
+    ['Guardian Ideal', 'USSF Guidance Memos'],
+  ],
+  'Coast Guard': [
+    ['COMDTINST M1000.3', 'Enlisted Performance Qualifications'],
+    ['COMDTINST M1650.25', 'Medals & Awards Manual'],
+    ['COMDTINST M1020.6', 'Uniform Regulations'],
+  ],
+};
+
+export default function ServiceScreen() {
+  const { data, updateData } = useVault();
+  const [dateInput, setDateInput] = useState('');
+  const [dateLabel, setDateLabel] = useState('');
+  const [awardName, setAwardName] = useState('');
+  const [awardDate, setAwardDate] = useState('');
+  const [awardOrders, setAwardOrders] = useState('');
+  const [bulletCategory, setBulletCategory] = useState<BulletCategory>('Leadership');
+  const [bulletText, setBulletText] = useState('');
+
+  if (!data) return null;
+  const { profile, dates, awards, bullets } = data;
+
+  const addDate = () => {
+    if (!dateInput || !dateLabel.trim()) return;
+    const entry: DateEntry = { id: uid(), date: dateInput, label: dateLabel.trim() };
+    updateData((d) => ({ ...d, dates: [...d.dates, entry] }));
+    setDateInput('');
+    setDateLabel('');
+  };
+
+  const addAward = () => {
+    if (!awardName.trim()) return;
+    const entry: AwardEntry = { id: uid(), name: awardName.trim(), date: awardDate, orders: awardOrders.trim() };
+    updateData((d) => ({ ...d, awards: [...d.awards, entry] }));
+    setAwardName('');
+    setAwardDate('');
+    setAwardOrders('');
+  };
+
+  const addBullet = () => {
+    if (!bulletText.trim()) return;
+    const entry: BulletEntry = { id: uid(), category: bulletCategory, text: bulletText.trim() };
+    updateData((d) => ({ ...d, bullets: [...d.bullets, entry] }));
+    setBulletText('');
+  };
+
+  const pubs = PUBS[profile.branch] ?? null;
+
   return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
+    <SafeAreaView edges={['top']} style={styles.flex}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { paddingBottom: BottomTabInset + Spacing.four }]}>
+        <ScreenHeader
+          eyebrow="01 · SERVICE RECORD"
+          title="Service"
+          description="Your profile, branch references, key dates, decorations, and a bullet bank for your next eval."
+        />
 
-export default function HomeScreen() {
-  return (
-    <ThemedView style={styles.container}>
-      <SafeAreaView style={styles.safeArea}>
-        <ThemedView style={styles.heroSection}>
-          <AnimatedIcon />
-          <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
-          </ThemedText>
-        </ThemedView>
-
-        <ThemedText type="code" style={styles.code}>
-          get started
-        </ThemedText>
-
-        <ThemedView type="backgroundElement" style={styles.stepContainer}>
-          <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
+        <Card title="Profile">
+          <Field
+            label="Name"
+            placeholder="Last, First"
+            value={profile.name}
+            onChangeText={(v) => updateData((d) => ({ ...d, profile: { ...d.profile, name: v } }))}
           />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
-          <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
+          <ChipSelect
+            label="Branch"
+            value={profile.branch}
+            options={BRANCHES}
+            onChange={(v) => updateData((d) => ({ ...d, profile: { ...d.profile, branch: v } }))}
           />
-        </ThemedView>
+          <ChipSelect
+            label="Component"
+            value={profile.component}
+            options={COMPONENTS}
+            onChange={(v) => updateData((d) => ({ ...d, profile: { ...d.profile, component: v } }))}
+          />
+          <View style={styles.fieldRow}>
+            <Field
+              label="Rank / Rate"
+              placeholder="e.g. SSG, PO2, Capt"
+              value={profile.rank}
+              onChangeText={(v) => updateData((d) => ({ ...d, profile: { ...d.profile, rank: v } }))}
+            />
+            <Field
+              label="Unit"
+              placeholder="Unit / duty station"
+              value={profile.unit}
+              onChangeText={(v) => updateData((d) => ({ ...d, profile: { ...d.profile, unit: v } }))}
+            />
+          </View>
+          <Field
+            label="ETS / EAS Date"
+            placeholder="YYYY-MM-DD"
+            value={profile.ets}
+            onChangeText={(v) => updateData((d) => ({ ...d, profile: { ...d.profile, ets: v } }))}
+          />
+        </Card>
 
-        {Platform.OS === 'web' && <WebBadge />}
-      </SafeAreaView>
-    </ThemedView>
+        <Card title="Branch Publications" hint="quick reference — verify current version">
+          {pubs ? (
+            pubs.map(([code, label]) => (
+              <View key={code} style={styles.pubRow}>
+                <ThemedText type="code" themeColor="accent" style={styles.pubCode}>
+                  {code}
+                </ThemedText>
+                <ThemedText type="small" style={styles.pubLabel}>
+                  {label}
+                </ThemedText>
+              </View>
+            ))
+          ) : (
+            <EmptyNote text="Select your branch above to see relevant publications." />
+          )}
+        </Card>
+
+        <Card title="Important Dates">
+          {dates.length === 0 ? (
+            <EmptyNote text="No dates tracked yet." />
+          ) : (
+            [...dates]
+              .sort((a, b) => a.date.localeCompare(b.date))
+              .map((d) => (
+                <ListRow
+                  key={d.id}
+                  eyebrow={d.date}
+                  title={d.label}
+                  onRemove={() =>
+                    updateData((data) => ({ ...data, dates: data.dates.filter((x) => x.id !== d.id) }))
+                  }
+                />
+              ))
+          )}
+          <View style={styles.addRow}>
+            <Field label="Date" placeholder="YYYY-MM-DD" value={dateInput} onChangeText={setDateInput} />
+            <Field label="Label" placeholder="Promotion board, PCS date..." value={dateLabel} onChangeText={setDateLabel} />
+          </View>
+          <BBButton label="Add date" variant="accent" onPress={addDate} />
+        </Card>
+
+        <Card title="Awards & Decorations">
+          {awards.length === 0 ? (
+            <EmptyNote text="No awards logged yet." />
+          ) : (
+            [...awards]
+              .reverse()
+              .map((a) => (
+                <ListRow
+                  key={a.id}
+                  eyebrow={a.date}
+                  title={a.name}
+                  subtitle={a.orders ? `Orders # ${a.orders}` : undefined}
+                  onRemove={() =>
+                    updateData((data) => ({ ...data, awards: data.awards.filter((x) => x.id !== a.id) }))
+                  }
+                />
+              ))
+          )}
+          <View style={styles.addRow}>
+            <Field label="Award name" value={awardName} onChangeText={setAwardName} />
+            <Field label="Date" placeholder="YYYY-MM-DD" value={awardDate} onChangeText={setAwardDate} />
+            <Field label="Orders #" value={awardOrders} onChangeText={setAwardOrders} />
+          </View>
+          <BBButton label="Add award" variant="accent" onPress={addAward} />
+        </Card>
+
+        <Card title="Bullet Bank" hint="for your next EPR / OPR / NCOER / FITREP">
+          {bullets.length === 0 ? (
+            <EmptyNote text="No bullets saved yet." />
+          ) : (
+            [...bullets]
+              .reverse()
+              .map((b) => (
+                <ListRow
+                  key={b.id}
+                  eyebrow={b.category}
+                  title={b.text}
+                  onRemove={() =>
+                    updateData((data) => ({ ...data, bullets: data.bullets.filter((x) => x.id !== b.id) }))
+                  }
+                />
+              ))
+          )}
+          <ChipSelect label="Category" value={bulletCategory} options={BULLET_CATEGORIES} onChange={(v) => setBulletCategory(v as BulletCategory)} />
+          <Field
+            label="Bullet"
+            placeholder="e.g. Led 12-Soldier team through NTC rotation, zero safety incidents"
+            value={bulletText}
+            onChangeText={setBulletText}
+          />
+          <BBButton label="Add bullet" variant="accent" onPress={addBullet} />
+        </Card>
+      </ScrollView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: 'center',
-    flexDirection: 'row',
-  },
-  safeArea: {
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    alignItems: 'center',
-    gap: Spacing.three,
-    paddingBottom: BottomTabInset + Spacing.three,
-    maxWidth: MaxContentWidth,
-  },
-  heroSection: {
-    alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingHorizontal: Spacing.four,
-    gap: Spacing.four,
-  },
-  title: {
-    textAlign: 'center',
-  },
-  code: {
-    textTransform: 'uppercase',
-  },
-  stepContainer: {
-    gap: Spacing.three,
-    alignSelf: 'stretch',
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.four,
-    borderRadius: Spacing.four,
-  },
+  flex: { flex: 1 },
+  content: { padding: Spacing.four, gap: Spacing.one },
+  fieldRow: { flexDirection: 'row', gap: Spacing.two },
+  addRow: { flexDirection: 'row', gap: Spacing.two, flexWrap: 'wrap' },
+  pubRow: { flexDirection: 'row', gap: Spacing.two, alignItems: 'flex-start' },
+  pubCode: { minWidth: 130 },
+  pubLabel: { flex: 1 },
 });
