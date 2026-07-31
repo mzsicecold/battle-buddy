@@ -1,20 +1,12 @@
-import { Linking, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Card } from '@/components/bb/card';
 import { Field } from '@/components/bb/field';
+import { Resource, ResourceCard } from '@/components/bb/resource-card';
 import { ScreenHeader } from '@/components/bb/screen-header';
-import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useVault } from '@/context/vault-context';
-import { useTheme } from '@/hooks/use-theme';
-
-interface Resource {
-  name: string;
-  detail: string;
-  actions: { label: string; url: string }[];
-  crisis?: boolean;
-}
 
 const CRISIS_RESOURCES: Resource[] = [
   {
@@ -49,38 +41,6 @@ const SUPPORT_RESOURCES: Resource[] = [
     actions: [{ label: 'Call', url: 'tel:18008742273' }],
   },
 ];
-
-function ResourceCard({ resource }: { resource: Resource }) {
-  const theme = useTheme();
-  return (
-    <View
-      style={[
-        styles.resourceCard,
-        {
-          backgroundColor: theme.backgroundElement,
-          borderColor: theme.border,
-          borderLeftColor: resource.crisis ? theme.crisis : theme.teal,
-        },
-      ]}>
-      <View style={styles.resourceMain}>
-        <ThemedText type="smallBold">{resource.name}</ThemedText>
-        <ThemedText type="small" themeColor="textSecondary">
-          {resource.detail}
-        </ThemedText>
-      </View>
-      <View style={styles.resourceActions}>
-        {resource.actions.map((action) => (
-          <Pressable
-            key={action.label}
-            onPress={() => Linking.openURL(action.url)}
-            style={[styles.actionBtn, { backgroundColor: theme.surfaceRaised, borderColor: theme.border }]}>
-            <ThemedText type="smallBold">{action.label}</ThemedText>
-          </Pressable>
-        ))}
-      </View>
-    </View>
-  );
-}
 
 export default function HelpScreen() {
   const { data, updateData } = useVault();
@@ -145,23 +105,4 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: Spacing.four, gap: Spacing.one },
   fieldRow: { flexDirection: 'row', gap: Spacing.two },
-  resourceCard: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: Spacing.two,
-    borderWidth: 1,
-    borderLeftWidth: 3,
-    borderRadius: Spacing.two,
-    padding: Spacing.three,
-    marginBottom: Spacing.one,
-  },
-  resourceMain: { flex: 1, gap: 3 },
-  resourceActions: { flexDirection: 'row', gap: Spacing.one },
-  actionBtn: {
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: 6,
-  },
 });

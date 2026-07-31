@@ -97,6 +97,7 @@ export interface AppData {
   finances: Finances;
   sapr: SaprContacts;
   journal: JournalEntry[];
+  promptIndex: number;
   checklist: Record<string, boolean>;
   bdd: BddEntry[];
   documents: DocumentEntry[];
@@ -115,6 +116,7 @@ export function defaultAppData(): AppData {
     },
     sapr: { sarcName: '', sarcPhone: '', vaName: '', vaPhone: '' },
     journal: [],
+    promptIndex: 0,
     checklist: {},
     bdd: [],
     documents: [],

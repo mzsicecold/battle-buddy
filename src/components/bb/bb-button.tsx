@@ -9,17 +9,18 @@ interface BBButtonProps extends PressableProps {
   variant?: 'accent' | 'default';
 }
 
-export function BBButton({ label, variant = 'default', style, ...rest }: BBButtonProps) {
+export function BBButton({ label, variant = 'default', style, disabled, ...rest }: BBButtonProps) {
   const theme = useTheme();
   const isAccent = variant === 'accent';
   return (
     <Pressable
+      disabled={disabled}
       style={({ pressed }) => [
         styles.btn,
         {
           backgroundColor: isAccent ? theme.accent : theme.surfaceRaised,
           borderColor: isAccent ? theme.accent : theme.border,
-          opacity: pressed ? 0.75 : 1,
+          opacity: disabled ? 0.5 : pressed ? 0.75 : 1,
         },
         typeof style === 'function' ? undefined : style,
       ]}
