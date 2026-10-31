@@ -20,7 +20,7 @@ const CHECKLIST_ITEMS = [
   'Attend Transition Assistance Program (TAP) class',
   'Schedule Separation Health Assessment (SHA)',
   'Compile complete medical & dental records for your BDD claim',
-  'File BDD claim (60–180 days before separation)',
+  'File BDD claim (180–90 days before separation)',
   'Request DD214 review appointment',
   'Update SGLI / life insurance beneficiaries',
   'Schedule household goods move (if applicable)',
