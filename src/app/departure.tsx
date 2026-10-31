@@ -17,18 +17,18 @@ import { useTheme } from '@/hooks/use-theme';
 import { BddEntry, BddStatus, uid } from '@/lib/app-data';
 
 const CHECKLIST_ITEMS = [
-  'Attend Transition Assistance Program (TAP) class',
-  'Schedule Separation Health Assessment (SHA)',
+  'Attend Transition Assistance Program (TAP) — start no later than 365 days before separation',
+  'Schedule Separation Health Assessment (SHA) and dental exam — no later than 90 days before separation',
   'Compile complete medical & dental records for your BDD claim',
   'File BDD claim (180–90 days before separation)',
-  'Request DD214 review appointment',
+  'Review your DD 214 for accuracy',
   'Update SGLI / life insurance beneficiaries',
   'Schedule household goods move (if applicable)',
   'Out-process finance — final pay & travel voucher',
   'Confirm TRICARE / VA health coverage transition',
   'Update address & family info in DEERS',
   'Request transcripts / JST for education benefits',
-  'Review GI Bill transfer or usage plan',
+  'Review GI Bill transfer or usage plan (transfers must be requested while you are still serving)',
   'Attend final out-processing appointment',
 ];
 
