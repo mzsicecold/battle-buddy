@@ -86,6 +86,8 @@ export interface DocumentEntry {
   mime: string;
   size: number;
   fileUri: string;
+  /** True when the file on disk is AES-GCM encrypted under the vault key. Absent on files added before encryption existed. */
+  encrypted?: boolean;
   addedDate: string;
 }
 

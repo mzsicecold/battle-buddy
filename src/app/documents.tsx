@@ -2,7 +2,7 @@ import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
 import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { BBButton } from '@/components/bb/bb-button';
@@ -16,7 +16,7 @@ import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useVault } from '@/context/vault-context';
 import { useTheme } from '@/hooks/use-theme';
 import { DocumentCategory, DocumentEntry, uid } from '@/lib/app-data';
-import { deleteDocumentFile, saveDocumentFile } from '@/lib/vault-storage';
+import { deleteDocumentFile, discardPickedCopy, readPickedFile } from '@/lib/vault-storage';
 
 const CATEGORIES: readonly DocumentCategory[] = ['Service', 'Finance', 'Medical / BDD', 'Other'];
 const ALLOWED_EXT = ['pdf', 'jpeg', 'jpg', 'docx'];
@@ -40,7 +40,7 @@ function fmtDate(d: string): string {
 }
 
 export default function DocumentsScreen() {
-  const { data, updateData } = useVault();
+  const { data, updateData, storeDocument, prepareDocumentForShare } = useVault();
   const theme = useTheme();
   const [category, setCategory] = useState<DocumentCategory>('Service');
   const [note, setNote] = useState('');
@@ -60,20 +60,21 @@ export default function DocumentsScreen() {
     setBusy(true);
     setError(null);
     try {
-      const saved = await saveDocumentFile(uri, name);
-      if (saved.size > MAX_FILE_BYTES) {
-        deleteDocumentFile(saved.uri);
-        setError(`That file is ${fmtBytes(saved.size)} — Battle Buddy caps single files at ${fmtBytes(MAX_FILE_BYTES)}.`);
+      const bytes = await readPickedFile(uri);
+      if (bytes.byteLength > MAX_FILE_BYTES) {
+        setError(`That file is ${fmtBytes(bytes.byteLength)} — Battle Buddy caps single files at ${fmtBytes(MAX_FILE_BYTES)}.`);
         return;
       }
+      const storedUri = await storeDocument(bytes);
       const entry: DocumentEntry = {
         id: uid(),
         name,
         category,
         note: note.trim(),
         mime: mime ?? '',
-        size: saved.size,
-        fileUri: saved.uri,
+        size: bytes.byteLength,
+        fileUri: storedUri,
+        encrypted: true,
         addedDate: new Date().toISOString().slice(0, 10),
       };
       updateData((d) => ({ ...d, documents: [...d.documents, entry] }));
@@ -81,6 +82,7 @@ export default function DocumentsScreen() {
     } catch {
       setError('Could not add that file — try again.');
     } finally {
+      discardPickedCopy(uri);
       setBusy(false);
     }
   };
@@ -120,9 +122,15 @@ export default function DocumentsScreen() {
   };
 
   const shareDocument = async (entry: DocumentEntry) => {
-    const available = await Sharing.isAvailableAsync();
-    if (!available) return;
-    await Sharing.shareAsync(entry.fileUri);
+    setError(null);
+    try {
+      const available = await Sharing.isAvailableAsync();
+      if (!available) return;
+      // Decrypts to a temporary copy. It is cleared on lock and before the next share.
+      await Sharing.shareAsync(await prepareDocumentForShare(entry));
+    } catch {
+      setError('Could not open that file — try again.');
+    }
   };
 
   const sorted = [...documents].sort((a, b) => b.addedDate.localeCompare(a.addedDate));
@@ -166,15 +174,11 @@ export default function DocumentsScreen() {
           ) : (
             sorted.map((d) => (
               <View key={d.id} style={[styles.docRow, { borderTopColor: theme.borderSoft }]}>
-                {d.mime.startsWith('image/') ? (
-                  <Image source={{ uri: d.fileUri }} style={[styles.thumb, { borderColor: theme.border }]} />
-                ) : (
-                  <View style={[styles.iconBox, { borderColor: theme.border, backgroundColor: theme.surfaceRaised }]}>
-                    <ThemedText type="code" themeColor="accent" style={styles.iconText}>
-                      {extOf(d.name).toUpperCase()}
-                    </ThemedText>
-                  </View>
-                )}
+                <View style={[styles.iconBox, { borderColor: theme.border, backgroundColor: theme.surfaceRaised }]}>
+                  <ThemedText type="code" themeColor="accent" style={styles.iconText}>
+                    {extOf(d.name).toUpperCase()}
+                  </ThemedText>
+                </View>
                 <View style={styles.docMain}>
                   <ThemedText type="small" style={styles.docName}>
                     {d.name}
@@ -211,7 +215,6 @@ const styles = StyleSheet.create({
   buttonRow: { flexDirection: 'row', gap: Spacing.two },
   usage: { marginTop: Spacing.one },
   docRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingVertical: Spacing.two, borderTopWidth: 1 },
-  thumb: { width: 40, height: 40, borderRadius: 6, borderWidth: 1 },
   iconBox: { width: 40, height: 40, borderRadius: 6, borderWidth: 1, alignItems: 'center', justifyContent: 'center' },
   iconText: { fontSize: 10 },
   docMain: { flex: 1, gap: 2 },

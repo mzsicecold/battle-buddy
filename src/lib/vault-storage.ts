@@ -30,28 +30,63 @@ export function documentsDirectoryHandle(): Directory {
   return dir;
 }
 
+/** Reads a picked file (from the document/image picker's temp URI) into memory. */
+export async function readPickedFile(sourceUri: string): Promise<Uint8Array> {
+  const buffer = await new File(sourceUri).arrayBuffer();
+  return new Uint8Array(buffer);
+}
+
 /**
- * Copies a picked file (from the document/image picker's temp URI) into our own documents
- * directory, byte-for-byte, under a collision-proof name. Returns the new file's URI and size.
+ * Best-effort delete of the picker's plaintext temp copy. The picker hands us a copy in the cache
+ * directory; once the encrypted copy is stored there is no reason to leave the original lying around.
  */
-export async function saveDocumentFile(
-  sourceUri: string,
-  suggestedName: string
-): Promise<{ uri: string; size: number }> {
-  const dir = documentsDirectoryHandle();
-  const dot = suggestedName.lastIndexOf('.');
-  const ext = dot >= 0 ? suggestedName.slice(dot) : '';
-  const uniqueName = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}${ext}`;
+export function discardPickedCopy(sourceUri: string): void {
+  try {
+    deleteDocumentFile(sourceUri);
+  } catch {
+    // Not ours to delete (e.g. a content:// URI) or already gone.
+  }
+}
 
-  const sourceFile = new File(sourceUri);
-  const buffer = await sourceFile.arrayBuffer();
-  const destFile = new File(dir, uniqueName);
-  destFile.write(new Uint8Array(buffer));
+/** Writes already-encrypted bytes to the documents directory under a collision-proof name. Returns its URI. */
+export function writeStoredDocument(encryptedBytes: Uint8Array): string {
+  const uniqueName = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.bbenc`;
+  const destFile = new File(documentsDirectoryHandle(), uniqueName);
+  destFile.write(encryptedBytes);
+  return destFile.uri;
+}
 
-  return { uri: destFile.uri, size: buffer.byteLength };
+/** Reads the raw (still encrypted) bytes of a stored document. */
+export async function readStoredDocument(uri: string): Promise<Uint8Array> {
+  return new Uint8Array(await new File(uri).arrayBuffer());
 }
 
 export function deleteDocumentFile(uri: string): void {
   const file = new File(uri);
   if (file.exists) file.delete();
+}
+
+/** Scratch directory for decrypted copies handed to the share sheet. Cleared on lock and on next share. */
+function shareDirectoryHandle(): Directory {
+  return new Directory(Paths.cache, 'bb-share');
+}
+
+/** Writes a decrypted copy under its original name (so the receiving app sees the right file type). */
+export function writeShareCopy(name: string, bytes: Uint8Array): string {
+  clearShareCopies();
+  const dir = shareDirectoryHandle();
+  dir.create({ intermediates: true });
+  const file = new File(dir, name.replace(/[\\/]/g, '_'));
+  file.write(bytes);
+  return file.uri;
+}
+
+/** Removes every decrypted share copy. Safe to call when none exist. */
+export function clearShareCopies(): void {
+  try {
+    const dir = shareDirectoryHandle();
+    if (dir.exists) dir.delete();
+  } catch {
+    // Best effort: the cache directory is also purged by the OS.
+  }
 }

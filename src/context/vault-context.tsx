@@ -1,15 +1,24 @@
 import * as Crypto from 'expo-crypto';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 
-import { AppData, defaultAppData } from '@/lib/app-data';
+import { AppData, DocumentEntry, defaultAppData } from '@/lib/app-data';
 import {
   VaultFile,
   changeVaultPassword,
   createVault,
+  decryptBytes,
+  encryptBytes,
   saveVault,
   unlockVault,
 } from '@/lib/vault-crypto';
-import { readVaultFile, writeVaultFile } from '@/lib/vault-storage';
+import {
+  clearShareCopies,
+  readStoredDocument,
+  readVaultFile,
+  writeShareCopy,
+  writeStoredDocument,
+  writeVaultFile,
+} from '@/lib/vault-storage';
 
 export type VaultStatus = 'checking' | 'no-vault' | 'locked' | 'unlocked';
 
@@ -23,6 +32,10 @@ interface VaultContextValue {
   changePassword: (current: string, next: string, confirm: string) => Promise<boolean>;
   updateData: (updater: (draft: AppData) => AppData) => void;
   clearError: () => void;
+  /** Encrypts file bytes under the vault key, stores them, and returns the stored file's URI. */
+  storeDocument: (bytes: Uint8Array) => Promise<string>;
+  /** Returns a URI the share sheet can open: a temporary decrypted copy, or the file itself if it predates encryption. */
+  prepareDocumentForShare: (entry: DocumentEntry) => Promise<string>;
 }
 
 const VaultContext = createContext<VaultContextValue | null>(null);
@@ -36,12 +49,44 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
   const [key, setKey] = useState<Crypto.AESEncryptionKey | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSave = useRef<AppData | null>(null);
   const keyRef = useRef<Crypto.AESEncryptionKey | null>(null);
   const vaultFileRef = useRef<VaultFile | null>(null);
   keyRef.current = key;
   vaultFileRef.current = vaultFile;
 
+  /** Encrypts and writes `next`. Takes the key and file as arguments so it still works after lock() clears state. */
+  const persist = useCallback(
+    async (activeKey: Crypto.AESEncryptionKey, activeVaultFile: VaultFile, next: AppData) => {
+      try {
+        const file = await saveVault(activeKey, activeVaultFile.saltHex, activeVaultFile.iterations, next);
+        vaultFileRef.current = file;
+        setVaultFile(file);
+        writeVaultFile(file);
+      } catch {
+        setError('Could not save your latest changes. Check that your device has free storage.');
+      }
+    },
+    []
+  );
+
+  /** Saves any debounced edit right now instead of waiting out the timer. No-op if nothing is pending. */
+  const flushPendingSave = useCallback(() => {
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
+    const next = pendingSave.current;
+    pendingSave.current = null;
+    const activeKey = keyRef.current;
+    const activeVaultFile = vaultFileRef.current;
+    if (!next || !activeKey || !activeVaultFile) return;
+    void persist(activeKey, activeVaultFile, next);
+  }, [persist]);
+
   useEffect(() => {
+    // Clear decrypted share copies left behind if the app was killed mid-share.
+    clearShareCopies();
     const existing = readVaultFile();
     if (existing) {
       setVaultFile(existing);
@@ -92,11 +137,14 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
   );
 
   const lock = useCallback(() => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
+    // Flush before clearing the key: persist() captures the key and data synchronously, so the final
+    // write still completes in the background even though the UI locks immediately.
+    flushPendingSave();
+    clearShareCopies();
     setKey(null);
     setData(null);
     setStatus('locked');
-  }, []);
+  }, [flushPendingSave]);
 
   const changePassword = useCallback(
     async (current: string, next: string, confirm: string) => {
@@ -129,27 +177,56 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
       if (!prev) return prev;
       const next = updater(prev);
 
+      pendingSave.current = next;
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => {
-        const activeKey = keyRef.current;
-        const activeVaultFile = vaultFileRef.current;
-        if (!activeKey || !activeVaultFile) return;
-        saveVault(activeKey, activeVaultFile.saltHex, activeVaultFile.iterations, next).then(
-          (file) => {
-            vaultFileRef.current = file;
-            setVaultFile(file);
-            writeVaultFile(file);
-          }
-        );
-      }, SAVE_DEBOUNCE_MS);
+      saveTimer.current = setTimeout(flushPendingSave, SAVE_DEBOUNCE_MS);
 
       return next;
     });
+  }, [flushPendingSave]);
+
+  const storeDocument = useCallback(async (bytes: Uint8Array) => {
+    const activeKey = keyRef.current;
+    if (!activeKey) throw new Error('Vault is locked.');
+    return writeStoredDocument(await encryptBytes(activeKey, bytes));
+  }, []);
+
+  const prepareDocumentForShare = useCallback(async (entry: DocumentEntry) => {
+    // Files added before encryption existed are plaintext on disk; share them as they are.
+    if (!entry.encrypted) return entry.fileUri;
+    const activeKey = keyRef.current;
+    if (!activeKey) throw new Error('Vault is locked.');
+    const plaintext = await decryptBytes(activeKey, await readStoredDocument(entry.fileUri));
+    return writeShareCopy(entry.name, plaintext);
   }, []);
 
   const value = useMemo<VaultContextValue>(
-    () => ({ status, error, data, createPassword, unlock, lock, changePassword, updateData, clearError }),
-    [status, error, data, createPassword, unlock, lock, changePassword, updateData, clearError]
+    () => ({
+      status,
+      error,
+      data,
+      createPassword,
+      unlock,
+      lock,
+      changePassword,
+      updateData,
+      clearError,
+      storeDocument,
+      prepareDocumentForShare,
+    }),
+    [
+      status,
+      error,
+      data,
+      createPassword,
+      unlock,
+      lock,
+      changePassword,
+      updateData,
+      clearError,
+      storeDocument,
+      prepareDocumentForShare,
+    ]
   );
 
   return <VaultContext.Provider value={value}>{children}</VaultContext.Provider>;

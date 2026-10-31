@@ -51,6 +51,18 @@ async function decryptWithKey<T>(key: Crypto.AESEncryptionKey, combinedB64: stri
   return JSON.parse(text) as T;
 }
 
+/** Encrypts raw file bytes under the vault key. Output is IV + ciphertext + tag, ready to write to disk. */
+export async function encryptBytes(key: Crypto.AESEncryptionKey, bytes: Uint8Array): Promise<Uint8Array> {
+  const sealed = await Crypto.aesEncryptAsync(bytes, key);
+  return sealed.combined('bytes');
+}
+
+/** Reverses encryptBytes. Throws if the data was tampered with or the key is wrong. */
+export async function decryptBytes(key: Crypto.AESEncryptionKey, combined: Uint8Array): Promise<Uint8Array> {
+  const sealed = Crypto.AESSealedData.fromCombined(combined);
+  return Crypto.aesDecryptAsync(sealed, key, { output: 'bytes' });
+}
+
 /** Creates a brand-new vault (new salt) from a password and initial data. */
 export async function createVault(
   password: string,
