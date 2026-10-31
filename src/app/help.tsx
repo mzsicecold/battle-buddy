@@ -20,7 +20,7 @@ const CRISIS_RESOURCES: Resource[] = [
   },
   {
     name: 'DoD Safe Helpline (SAPR)',
-    detail: 'Sexual assault support — confidential, 24/7 · Text 55-247',
+    detail: 'Sexual assault support — confidential, 24/7 · Text your base or ZIP to 55-247 to find local responders',
     actions: [
       { label: 'Call', url: 'tel:8779955247' },
       { label: 'Text', url: 'sms:55247' },
@@ -37,7 +37,7 @@ const SUPPORT_RESOURCES: Resource[] = [
   },
   {
     name: 'TRICARE Nurse Advice Line',
-    detail: '24/7 nurse guidance on symptoms, care options, and whether to seek urgent care',
+    detail: '24/7 nurse guidance on symptoms, care options, and whether to seek urgent care · press option 1',
     actions: [{ label: 'Call', url: 'tel:18008742273' }],
   },
 ];

@@ -38,8 +38,8 @@ const MENTAL_HEALTH_RESOURCES: Resource[] = [
   },
   {
     name: 'Vet Centers (Readjustment Counseling)',
-    detail: 'Community-based counseling for combat vets, service members, and families',
-    actions: [{ label: 'Call', url: 'tel:18777827432' }],
+    detail: 'Community-based counseling for combat vets, service members, and families · 877-927-8387 (24/7)',
+    actions: [{ label: 'Call', url: 'tel:18779278387' }],
   },
 ];
 
