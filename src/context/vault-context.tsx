@@ -1,5 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState } from 'react-native';
 
 import { AppData, DocumentEntry, defaultAppData } from '@/lib/app-data';
 import {
@@ -40,6 +41,8 @@ interface VaultContextValue {
 
 const VaultContext = createContext<VaultContextValue | null>(null);
 const SAVE_DEBOUNCE_MS = 300;
+/** How long the app can sit in the background before the vault locks itself. */
+const AUTO_LOCK_MS = 60_000;
 
 export function VaultProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<VaultStatus>('checking');
@@ -145,6 +148,23 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     setData(null);
     setStatus('locked');
   }, [flushPendingSave]);
+
+  // Auto-lock after AUTO_LOCK_MS in the background. Uses timestamps rather than a timer because JS
+  // timers don't run reliably while suspended. Only 'background' counts: system sheets (file picker,
+  // share sheet, permission prompts) make the app 'inactive', which must not lock the vault.
+  useEffect(() => {
+    if (status !== 'unlocked') return;
+    let backgroundedAt: number | null = null;
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'background') {
+        backgroundedAt = Date.now();
+      } else if (next === 'active') {
+        if (backgroundedAt !== null && Date.now() - backgroundedAt >= AUTO_LOCK_MS) lock();
+        backgroundedAt = null;
+      }
+    });
+    return () => subscription.remove();
+  }, [status, lock]);
 
   const changePassword = useCallback(
     async (current: string, next: string, confirm: string) => {

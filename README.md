@@ -42,7 +42,7 @@ Implementation lives in [`src/lib/vault-crypto.ts`](src/lib/vault-crypto.ts), [`
 
 ### Known limits (be honest about these)
 
-- **No auto-lock or lock button yet.** The vault unlocks at launch and stays unlocked until the app is closed. `lock()` exists and flushes pending saves correctly; it just isn't wired to any UI.
+- **Locking is basic.** A **Lock** button sits at the top of every screen, and the vault locks itself after 60 seconds in the background. Pending edits are saved before it locks. iOS may still show a snapshot of the last screen in the app switcher during that minute, and there is no privacy cover on it yet.
 - **No biometric unlock.** `expo-local-authentication` and `expo-secure-store` are installed but not used yet.
 - **Key derivation runs in JavaScript.** The iteration count (210,000) is lower than a native implementation would use and has not been benchmarked on a physical device.
 - **The share sheet works on a decrypted temporary copy.** It exists on disk until the vault locks, you share another file, or the app restarts. iOS may also leave its own temporary copy of a picked file in the app's `tmp/` folder.
@@ -50,7 +50,7 @@ Implementation lives in [`src/lib/vault-crypto.ts`](src/lib/vault-crypto.ts), [`
 
 ## Reference data you should verify
 
-The checklist items, publication numbers, filing windows, and phone numbers are entered by hand from public sources and **may be wrong or out of date**. Each screen says "verify current version" where it matters, but the source of truth is always the official one (VA.gov, MilitaryOneSource.mil, your installation's TAP/transition office). Pull requests that correct this data are the most useful contribution.
+The checklist items, publication numbers, filing windows, and phone numbers are entered by hand from public sources and **may be wrong or out of date**. Each screen says "verify current version" where it matters, but the source of truth is always the official one (VA.gov, MilitaryOneSource.mil, your installation's TAP/transition office). As of 2026-10-31, the crisis and support phone numbers and the BDD filing window (180 to 90 days before separation) were checked against VA, DoD and TRICARE pages; publication numbers and the rest of the checklist have not been. Pull requests that correct this data are the most useful contribution.
 
 ## Tech stack
 
@@ -76,7 +76,7 @@ The simulator starts with no files to pick from. To test **Add Photo**, load an 
 
 ## Roadmap (not built yet)
 
-- Lock button, auto-lock on background, and biometric unlock
+- Biometric unlock, and a privacy cover for the app-switcher snapshot
 - Benchmark and tune key derivation on a physical device
 - Unit tests for the crypto round trip (wrong password, password change, tamper detection)
 - Verify and source-cite all reference data
