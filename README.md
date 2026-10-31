@@ -74,11 +74,21 @@ The first build compiles the native modules and takes a while. It has been built
 
 The simulator starts with no files to pick from. To test **Add Photo**, load an image with `xcrun simctl addmedia booted <image>`. To test **Choose File**, put a PDF in the Files app's "On My iPhone" storage.
 
+## Tests
+
+```bash
+npm test
+```
+
+19 tests (about 5 seconds, Node 22+ needed, no extra dependencies) cover `src/lib/vault-crypto.ts`: round trip, wrong or near-miss passwords, the stored file format (random salt, no password or plaintext on disk, iteration count honored), tamper detection on ciphertext, salt, and truncation, IV freshness on every save, password change, and encryption of document bytes. I also confirmed the tests can fail by deliberately breaking the code three ways (ignoring the stored iteration count, using a fixed salt, skipping re-keying on password change) and checking that the right tests caught each.
+
+**What they don't cover:** the app uses a native AES module that doesn't exist in Node, so the tests run against a stand-in built on `node:crypto` that follows the same IV + ciphertext + tag format. They verify this repo's logic, not the native module, and they don't replace testing on a device. The vault context (saving, locking) and the screens have no automated tests yet.
+
 ## Roadmap (not built yet)
 
 - Biometric unlock
 - Benchmark and tune key derivation on a physical device
-- Unit tests for the crypto round trip (wrong password, password change, tamper detection)
+- Automated tests for the vault context (debounced save, lock flush) and a device test of the native AES path
 - Verify and source-cite all reference data
 - An **opt-in** Claude-assisted bullet rewriter. The open design question is how to offer it without breaking the "nothing leaves your device" promise: off by default, send only the single line the user selects, store nothing, and say so plainly in the UI.
 
