@@ -42,7 +42,7 @@ Implementation lives in [`src/lib/vault-crypto.ts`](src/lib/vault-crypto.ts), [`
 
 ### Known limits (be honest about these)
 
-- **Locking is basic.** A **Lock** button sits at the top of every screen, and the vault locks itself after 60 seconds in the background. Pending edits are saved before it locks. iOS may still show a snapshot of the last screen in the app switcher during that minute, and there is no privacy cover on it yet.
+- **Locking is basic.** A **Lock** button sits at the top of every screen, and the vault locks itself after 60 seconds in the background. Pending edits are saved before it locks. While the app is unlocked and not in the foreground, an opaque cover replaces the screen, so the iOS app-switcher snapshot shows only the app's mark and none of your data.
 - **No biometric unlock.** `expo-local-authentication` and `expo-secure-store` are installed but not used yet.
 - **Key derivation runs in JavaScript.** The iteration count (210,000) is lower than a native implementation would use and has not been benchmarked on a physical device.
 - **The share sheet works on a decrypted temporary copy.** It exists on disk until the vault locks, you share another file, or the app restarts. iOS may also leave its own temporary copy of a picked file in the app's `tmp/` folder.
@@ -76,7 +76,7 @@ The simulator starts with no files to pick from. To test **Add Photo**, load an 
 
 ## Roadmap (not built yet)
 
-- Biometric unlock, and a privacy cover for the app-switcher snapshot
+- Biometric unlock
 - Benchmark and tune key derivation on a physical device
 - Unit tests for the crypto round trip (wrong password, password change, tamper detection)
 - Verify and source-cite all reference data

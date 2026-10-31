@@ -5,7 +5,9 @@ import { ActivityIndicator, useColorScheme, View } from 'react-native';
 
 import AppTabs from '@/components/app-tabs';
 import { LockScreen } from '@/components/lock-screen';
+import { PrivacyCover } from '@/components/privacy-cover';
 import { useVault, VaultProvider } from '@/context/vault-context';
+import { useAppState } from '@/hooks/use-app-state';
 import { useTheme } from '@/hooks/use-theme';
 
 SplashScreen.preventAutoHideAsync();
@@ -13,6 +15,7 @@ SplashScreen.preventAutoHideAsync();
 function Gate() {
   const { status } = useVault();
   const theme = useTheme();
+  const appState = useAppState();
 
   useEffect(() => {
     if (status !== 'checking') {
@@ -32,7 +35,14 @@ function Gate() {
     return <LockScreen />;
   }
 
-  return <AppTabs />;
+  // Only the unlocked app shows user data, so only it needs a cover. (System sheets such as the file
+  // picker also make the app 'inactive'; the cover is simply hidden behind them.)
+  return (
+    <>
+      <AppTabs />
+      {appState !== 'active' ? <PrivacyCover /> : null}
+    </>
+  );
 }
 
 export default function RootLayout() {
