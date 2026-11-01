@@ -7,6 +7,7 @@ import { Card } from '@/components/bb/card';
 import { ChipSelect } from '@/components/bb/chip-select';
 import { Field } from '@/components/bb/field';
 import { EmptyNote, ListRow } from '@/components/bb/list-row';
+import { PhaseCard } from '@/components/bb/phase-card';
 import { ScreenHeader } from '@/components/bb/screen-header';
 import { ThemedText } from '@/components/themed-text';
 import { BottomTabInset, Spacing } from '@/constants/theme';
@@ -104,6 +105,8 @@ export default function ServiceScreen() {
           title="Service"
           description="Your profile, branch references, key dates, decorations, and a bullet bank for your next eval."
         />
+
+        <PhaseCard ets={profile.ets} />
 
         <Card title="Profile">
           <Field
