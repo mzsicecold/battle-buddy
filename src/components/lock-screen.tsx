@@ -17,6 +17,14 @@ import { Spacing } from '@/constants/theme';
 import { useVault } from '@/context/vault-context';
 import { useTheme } from '@/hooks/use-theme';
 
+/**
+ * Key derivation (vault-crypto.ts) never lets the JS thread go back to the event loop: @noble/hashes
+ * yields between chunks with a microtask, so React cannot paint anything until it finishes. Wait one
+ * short timer first so "Creating your vault…" is on screen before the thread gets busy. The native
+ * spinner keeps turning on its own while the JS thread is occupied.
+ */
+const letBusyStatePaint = () => new Promise<void>((resolve) => setTimeout(resolve, 60));
+
 export function LockScreen() {
   const theme = useTheme();
   const { status, error, createPassword, unlock, clearError } = useVault();
@@ -30,6 +38,7 @@ export function LockScreen() {
     clearError();
     setBusy(true);
     try {
+      await letBusyStatePaint();
       if (isCreate) {
         await createPassword(password, confirm);
       } else {
@@ -81,6 +90,7 @@ export function LockScreen() {
               <TextInput
                 value={password}
                 onChangeText={setPassword}
+                editable={!busy}
                 secureTextEntry
                 autoCapitalize="none"
                 autoCorrect={false}
@@ -100,6 +110,7 @@ export function LockScreen() {
                 <TextInput
                   value={confirm}
                   onChangeText={setConfirm}
+                  editable={!busy}
                   secureTextEntry
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -126,13 +137,30 @@ export function LockScreen() {
                 { backgroundColor: theme.accent, opacity: pressed || busy || !password ? 0.7 : 1 },
               ]}>
               {busy ? (
-                <ActivityIndicator color={theme.accentInk} />
+                <View style={styles.busyRow}>
+                  <ActivityIndicator color={theme.accentInk} />
+                  <ThemedText type="smallBold" themeColor="accentInk">
+                    {isCreate ? 'Creating your vault…' : 'Unlocking…'}
+                  </ThemedText>
+                </View>
               ) : (
                 <ThemedText type="smallBold" themeColor="accentInk">
                   {isCreate ? 'Create & Unlock' : 'Unlock'}
                 </ThemedText>
               )}
             </Pressable>
+
+            {busy && (
+              <ThemedText
+                type="small"
+                themeColor="textSecondary"
+                accessibilityLiveRegion="polite"
+                style={styles.busyNote}>
+                {isCreate
+                  ? 'Locking your data behind your password takes a few seconds. Keep this screen open.'
+                  : 'Checking your password. This takes a few seconds.'}
+              </ThemedText>
+            )}
 
             <ThemedText type="small" themeColor="textFaint" style={styles.scopeNote}>
               AES-256 encryption, key derived from your password (PBKDF2). This protects the
@@ -214,6 +242,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginTop: Spacing.one,
+  },
+  busyRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  busyNote: {
+    lineHeight: 17,
   },
   scopeNote: {
     marginTop: Spacing.two,
