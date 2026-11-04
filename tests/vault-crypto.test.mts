@@ -16,11 +16,10 @@
  * The Swift code itself is only proven on a device: see "Native key derivation" in the README.
  */
 import assert from 'node:assert/strict';
-import { createCipheriv, createDecipheriv, pbkdf2Sync, randomBytes } from 'node:crypto';
+import { pbkdf2Sync, randomBytes } from 'node:crypto';
 import { afterEach, before, describe, it, mock } from 'node:test';
 
-const IV_BYTES = 12;
-const TAG_BYTES = 16;
+import { expoCryptoStandIn, IV_BYTES, TAG_BYTES } from './expo-crypto-stand-in.mts';
 
 type NativeBehavior = 'absent' | 'works' | 'throws' | 'wrong-length';
 let nativeBehavior: NativeBehavior = 'absent';
@@ -40,70 +39,11 @@ async function nativePbkdf2Sha256Hex(
   return key;
 }
 
-class StandInKey {
-  readonly bytes: Uint8Array;
-  constructor(bytes: Uint8Array) {
-    this.bytes = Uint8Array.from(bytes);
-  }
-  static import(bytes: Uint8Array): StandInKey {
-    return new StandInKey(bytes);
-  }
-}
-
-class StandInSealedData {
-  readonly packed: Uint8Array;
-  constructor(packed: Uint8Array) {
-    this.packed = packed;
-  }
-  static fromCombined(combined: Uint8Array | string): StandInSealedData {
-    const bytes = typeof combined === 'string' ? Buffer.from(combined, 'base64') : combined;
-    return new StandInSealedData(Uint8Array.from(bytes));
-  }
-  async combined(encoding?: 'bytes' | 'base64'): Promise<Uint8Array | string> {
-    return encoding === 'base64' ? Buffer.from(this.packed).toString('base64') : this.packed;
-  }
-}
-
-async function aesEncryptAsync(plaintext: Uint8Array, key: StandInKey): Promise<StandInSealedData> {
-  const iv = randomBytes(IV_BYTES);
-  const cipher = createCipheriv('aes-256-gcm', key.bytes, iv);
-  const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
-  return new StandInSealedData(Buffer.concat([iv, ciphertext, cipher.getAuthTag()]));
-}
-
-async function aesDecryptAsync(
-  sealed: StandInSealedData,
-  key: StandInKey,
-  _options?: { output?: 'bytes' | 'base64' }
-): Promise<Uint8Array> {
-  const packed = Buffer.from(sealed.packed);
-  if (packed.length < IV_BYTES + TAG_BYTES) throw new Error('Sealed data is too short');
-  const iv = packed.subarray(0, IV_BYTES);
-  const tag = packed.subarray(packed.length - TAG_BYTES);
-  const ciphertext = packed.subarray(IV_BYTES, packed.length - TAG_BYTES);
-  const decipher = createDecipheriv('aes-256-gcm', key.bytes, iv);
-  decipher.setAuthTag(tag);
-  // final() throws if the tag does not verify (wrong key or modified data).
-  return new Uint8Array(Buffer.concat([decipher.update(ciphertext), decipher.final()]));
-}
-
-async function getRandomBytesAsync(length: number): Promise<Uint8Array> {
-  return new Uint8Array(randomBytes(length));
-}
-
 type VaultCrypto = typeof import('../src/lib/vault-crypto.ts');
 let vc: VaultCrypto;
 
 before(async () => {
-  mock.module('expo-crypto', {
-    exports: {
-      AESEncryptionKey: StandInKey,
-      AESSealedData: StandInSealedData,
-      aesEncryptAsync,
-      aesDecryptAsync,
-      getRandomBytesAsync,
-    },
-  });
+  mock.module('expo-crypto', { exports: expoCryptoStandIn });
   mock.module('../modules/pbkdf2-native/src/index.ts', {
     exports: { nativePbkdf2Sha256Hex, hasNativePbkdf2: true },
   });
@@ -219,27 +159,6 @@ describe('saving', () => {
     assert.notEqual(one.combinedB64, two.combinedB64);
     const iv = (f: typeof one) => Buffer.from(f.combinedB64, 'base64').subarray(0, 12).toString('hex');
     assert.notEqual(iv(one), iv(two));
-  });
-});
-
-describe('changing the password', () => {
-  it('keeps the data, uses a new salt, and swaps which password works', async () => {
-    const { file } = await vc.createVault(PASSWORD, SAMPLE);
-    const next = await vc.changeVaultPassword<typeof SAMPLE>(PASSWORD, 'a brand new passphrase', file);
-
-    assert.notEqual(next.file.saltHex, file.saltHex);
-    await assert.rejects(vc.unlockVault(PASSWORD, next.file), 'old password must stop working');
-    const { data } = await vc.unlockVault<typeof SAMPLE>('a brand new passphrase', next.file);
-    assert.deepEqual(data, SAMPLE);
-  });
-
-  it('refuses when the current password is wrong, and leaves the original file usable', async () => {
-    const { file } = await vc.createVault(PASSWORD, SAMPLE);
-    const snapshot = JSON.stringify(file);
-    await assert.rejects(vc.changeVaultPassword('wrong current', 'whatever new', file));
-    assert.equal(JSON.stringify(file), snapshot, 'original file must not be modified');
-    const { data } = await vc.unlockVault<typeof SAMPLE>(PASSWORD, file);
-    assert.deepEqual(data, SAMPLE);
   });
 });
 

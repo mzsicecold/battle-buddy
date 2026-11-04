@@ -87,16 +87,24 @@ export async function decryptBytes(key: Crypto.AESEncryptionKey, combined: Uint8
   return Crypto.aesDecryptAsync(sealed, key, { output: 'bytes' });
 }
 
+/** A new random salt and the key a password gives under it, at the current iteration count. */
+export async function createVaultKey(
+  password: string
+): Promise<{ saltHex: string; iterations: number; key: Crypto.AESEncryptionKey }> {
+  const saltBytes = await Crypto.getRandomBytesAsync(SALT_BYTES);
+  const saltHex = bytesToHex(saltBytes);
+  const key = await deriveKey(password, saltHex, PBKDF2_ITERATIONS);
+  return { saltHex, iterations: PBKDF2_ITERATIONS, key };
+}
+
 /** Creates a brand-new vault (new salt) from a password and initial data. */
 export async function createVault(
   password: string,
   data: unknown
 ): Promise<{ file: VaultFile; key: Crypto.AESEncryptionKey }> {
-  const saltBytes = await Crypto.getRandomBytesAsync(SALT_BYTES);
-  const saltHex = bytesToHex(saltBytes);
-  const key = await deriveKey(password, saltHex, PBKDF2_ITERATIONS);
+  const { saltHex, iterations, key } = await createVaultKey(password);
   const combinedB64 = await encryptWithKey(key, data);
-  return { file: { saltHex, iterations: PBKDF2_ITERATIONS, combinedB64 }, key };
+  return { file: { saltHex, iterations, combinedB64 }, key };
 }
 
 /** Re-derives the key for an existing vault file and decrypts it. Throws on wrong password. */
@@ -118,15 +126,4 @@ export async function saveVault(
 ): Promise<VaultFile> {
   const combinedB64 = await encryptWithKey(key, data);
   return { saltHex, iterations, combinedB64 };
-}
-
-/** Changes the password: verifies the current one, then re-derives + re-encrypts under a new salt/key. */
-export async function changeVaultPassword<T>(
-  currentPassword: string,
-  newPassword: string,
-  file: VaultFile
-): Promise<{ file: VaultFile; key: Crypto.AESEncryptionKey }> {
-  // Throws if currentPassword is wrong.
-  const { data } = await unlockVault<T>(currentPassword, file);
-  return createVault(newPassword, data);
 }

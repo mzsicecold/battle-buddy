@@ -5,15 +5,16 @@ import { AppState } from 'react-native';
 import { AppData, DocumentEntry, defaultAppData } from '@/lib/app-data';
 import {
   VaultFile,
-  changeVaultPassword,
   createVault,
   decryptBytes,
   encryptBytes,
   saveVault,
   unlockVault,
 } from '@/lib/vault-crypto';
+import { type RekeyResult, WrongCurrentPasswordError, changePasswordKeepingDocuments } from '@/lib/vault-rekey';
 import {
   clearShareCopies,
+  deleteDocumentFile,
   readStoredDocument,
   readVaultFile,
   writeShareCopy,
@@ -56,11 +57,18 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
   const pendingSave = useRef<AppData | null>(null);
   const keyRef = useRef<Crypto.AESEncryptionKey | null>(null);
   const vaultFileRef = useRef<VaultFile | null>(null);
+  const dataRef = useRef<AppData | null>(null);
+  // True while a password change is re-encrypting documents. Saves, new documents and sharing wait it out,
+  // because they would otherwise use the old key after the vault file has moved to the new one.
+  const rekeying = useRef(false);
+  // Set if the vault was locked while a password change was running, so the new key is not put back in state.
+  const lockedDuringRekey = useRef(false);
   // Mirror state into refs after each commit so callbacks (auto-lock, flush) read the latest key and file.
   useEffect(() => {
     keyRef.current = key;
     vaultFileRef.current = vaultFile;
-  }, [key, vaultFile]);
+    dataRef.current = data;
+  }, [key, vaultFile, data]);
 
   /** Encrypts and writes `next`. Takes the key and file as arguments so it still works after lock() clears state. */
   const persist = useCallback(
@@ -79,6 +87,8 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
 
   /** Saves any debounced edit right now instead of waiting out the timer. No-op if nothing is pending. */
   const flushPendingSave = useCallback(() => {
+    // A password change is rewriting the vault. Edits stay pending and are saved when it finishes.
+    if (rekeying.current) return;
     if (saveTimer.current) {
       clearTimeout(saveTimer.current);
       saveTimer.current = null;
@@ -139,6 +149,8 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
   const lock = useCallback(() => {
     // Flush before clearing the key: persist() captures the key and data synchronously, so the final
     // write still completes in the background even though the UI locks immediately.
+    // (During a password change this does nothing; changePassword saves the pending edits when it ends.)
+    if (rekeying.current) lockedDuringRekey.current = true;
     flushPendingSave();
     clearShareCopies();
     setKey(null);
@@ -163,32 +175,6 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     return () => subscription.remove();
   }, [status, lock]);
 
-  const changePassword = useCallback(
-    async (current: string, next: string, confirm: string) => {
-      setError(null);
-      if (!vaultFile) return false;
-      if (next.length < 8) {
-        setError('New password must be at least 8 characters.');
-        return false;
-      }
-      if (next !== confirm) {
-        setError('New passwords do not match.');
-        return false;
-      }
-      try {
-        const { file, key: newKey } = await changeVaultPassword<AppData>(current, next, vaultFile);
-        writeVaultFile(file);
-        setVaultFile(file);
-        setKey(newKey);
-        return true;
-      } catch {
-        setError('Current password is incorrect.');
-        return false;
-      }
-    },
-    [vaultFile]
-  );
-
   const updateData = useCallback((updater: (draft: AppData) => AppData) => {
     setData((prev) => {
       if (!prev) return prev;
@@ -202,13 +188,106 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
     });
   }, [flushPendingSave]);
 
+  /**
+   * Changes the password and re-encrypts every stored document under the new key (see vault-rekey.ts).
+   * If anything fails, the old password and all documents are exactly as they were.
+   */
+  const changePassword = useCallback(
+    async (current: string, next: string, confirm: string) => {
+      setError(null);
+      const startFile = vaultFileRef.current ?? vaultFile;
+      const startKey = keyRef.current;
+      if (!startFile || !startKey || rekeying.current) return false;
+      if (next.length < 8) {
+        setError('New password must be at least 8 characters.');
+        return false;
+      }
+      if (next !== confirm) {
+        setError('New passwords do not match.');
+        return false;
+      }
+
+      // Include edits that have not been saved yet, so the re-keyed vault is complete.
+      const latest = pendingSave.current ?? dataRef.current;
+      if (!latest) return false;
+
+      rekeying.current = true;
+      lockedDuringRekey.current = false;
+      let result: RekeyResult<AppData>;
+      try {
+        result = await changePasswordKeepingDocuments(current, next, startFile, latest, {
+          readDocument: readStoredDocument,
+          writeDocument: writeStoredDocument,
+          deleteDocument: deleteDocumentFile,
+          commitVaultFile: writeVaultFile,
+        });
+      } catch (error) {
+        // Nothing changed. Save whatever was edited while this ran, under the old key.
+        const lockedMeanwhile = lockedDuringRekey.current;
+        rekeying.current = false;
+        lockedDuringRekey.current = false;
+        if (lockedMeanwhile) {
+          const pending = pendingSave.current;
+          pendingSave.current = null;
+          if (pending) void persist(startKey, startFile, pending);
+        } else {
+          flushPendingSave();
+        }
+        setError(
+          error instanceof WrongCurrentPasswordError
+            ? 'Current password is incorrect.'
+            : 'Could not change your password. Your old password and your documents are unchanged.'
+        );
+        return false;
+      }
+
+      // The new password is in effect on disk. Point every in-memory copy at the new key, file and addresses.
+      const urisById = new Map(result.data.documents.map((d) => [d.id, d.fileUri]));
+      const withNewUris = (d: AppData): AppData => ({
+        ...d,
+        documents: d.documents.map((doc) => {
+          const uri = urisById.get(doc.id);
+          return doc.encrypted && uri ? { ...doc, fileUri: uri } : doc;
+        }),
+      });
+      const lockedMeanwhile = lockedDuringRekey.current;
+      vaultFileRef.current = result.file;
+      setVaultFile(result.file);
+      rekeying.current = false;
+      lockedDuringRekey.current = false;
+
+      if (lockedMeanwhile) {
+        // Locked while this ran: keep the new key out of memory, but do not lose edits made meanwhile.
+        const pending = pendingSave.current;
+        pendingSave.current = null;
+        if (pending) void persist(result.key, result.file, withNewUris(pending));
+      } else {
+        keyRef.current = result.key;
+        setKey(result.key);
+        updateData(withNewUris); // also saves, under the new key, anything edited while this ran
+      }
+
+      if (result.unreadable.length > 0) {
+        setError(
+          `Password changed. ${result.unreadable.length} document${result.unreadable.length === 1 ? '' : 's'} could not be read and ` +
+            `${result.unreadable.length === 1 ? 'was' : 'were'} left as they were. Delete ${result.unreadable.length === 1 ? 'it' : 'them'} and add ` +
+            `${result.unreadable.length === 1 ? 'it' : 'them'} again.`
+        );
+      }
+      return true;
+    },
+    [vaultFile, persist, flushPendingSave, updateData]
+  );
+
   const storeDocument = useCallback(async (bytes: Uint8Array) => {
+    if (rekeying.current) throw new Error('Your password is being changed. Try again in a moment.');
     const activeKey = keyRef.current;
     if (!activeKey) throw new Error('Vault is locked.');
     return writeStoredDocument(await encryptBytes(activeKey, bytes));
   }, []);
 
   const prepareDocumentForShare = useCallback(async (entry: DocumentEntry) => {
+    if (rekeying.current) throw new Error('Your password is being changed. Try again in a moment.');
     // Files added before encryption existed are plaintext on disk; share them as they are.
     if (!entry.encrypted) return entry.fileUri;
     const activeKey = keyRef.current;
