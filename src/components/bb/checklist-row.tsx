@@ -38,7 +38,7 @@ export function ChecklistRow({ label, notes, checked, onToggle }: ChecklistRowPr
           {label}
         </ThemedText>
         {notes?.map((note) => (
-          <ThemedText key={note} type="small" themeColor="textFaint">
+          <ThemedText key={note} type="small" themeColor="textSecondary">
             {note}
           </ThemedText>
         ))}

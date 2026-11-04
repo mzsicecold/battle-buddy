@@ -75,7 +75,7 @@ export function PhaseCard({ ets }: { ets: string }) {
         )}
       </View>
 
-      <ThemedText type="small" themeColor="textFaint">
+      <ThemedText type="small" themeColor="textSecondary">
         Counted from your date using DoD, VA, and TRICARE guidance last checked {TIMELINE_LAST_VERIFIED}. Rules differ by
         service, separation type, and installation. Confirm yours with your transition office or a Veterans Service Officer.
       </ThemedText>

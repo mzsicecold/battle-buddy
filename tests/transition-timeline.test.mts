@@ -130,6 +130,9 @@ describe('getTransition', () => {
     assert.equal(late?.passedNotes.length, 3);
     assert.ok(late?.passedNotes.some((n) => n.includes('BDD is closed')));
     assert.ok(late?.passedNotes.some((n) => n.includes('TAP')));
+    // Each note is shown on its own, away from its deadline, so it has to say which deadline it means.
+    assert.ok(late?.passedNotes.some((n) => n.includes('health assessment')));
+    assert.ok(late?.passedNotes.every((n) => !/\bthis date\b/i.test(n)));
 
     const early = getTransition(ets, day('2026-05-01'));
     assert.deepEqual(early?.passedNotes, []);

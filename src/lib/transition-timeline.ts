@@ -162,7 +162,7 @@ export function milestonesFor(ets: number): Milestone[] {
       label: 'Final health assessment and dental exam scheduled by',
       detail: `Must be scheduled no later than ${RULES.shaDaysBefore} days before separation.`,
       day: ets - RULES.shaDaysBefore,
-      passedNote: 'If this date has passed, ask your transition office what is still possible.',
+      passedNote: 'The date to schedule your final health assessment and dental exam has passed. Ask your transition office what is still possible.',
     },
     {
       id: 'gi-bill',
