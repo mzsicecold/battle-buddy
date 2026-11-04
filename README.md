@@ -33,7 +33,7 @@ A crisis line (988, press 1) is reachable from the lock screen, before you have 
 ## How your data is protected
 
 - **Everything is encrypted at rest.** Profile, pay, journal, SAPR contacts, BDD notes, and the document list live in a single vault encrypted with **AES-256-GCM**.
-- **The key comes from your password.** PBKDF2-HMAC-SHA256 (210,000 iterations, random 16-byte salt) derives the key. The password and key are never written to disk.
+- **The key comes from your password.** PBKDF2-HMAC-SHA256 (600,000 iterations, random 16-byte salt) derives the key, using the system's CommonCrypto through a small local module. Vaults created before that was raised keep the 210,000 their file records and still open. The password and key are never written to disk.
 - **Documents are encrypted too.** Each file is encrypted with the vault key before it is stored (as a `.bbenc` file). It is decrypted only into a temporary copy when you tap Share, and that copy is cleared when the vault locks, before the next share, and when the app starts.
 - **No network access.** The app code makes no network requests, has no accounts, and includes no analytics or crash reporting. The only outbound actions are `tel:` and `sms:` links you tap yourself.
 - **No password recovery.** If you forget the password, the data cannot be decrypted. The app says so before you set one.
@@ -44,7 +44,8 @@ Implementation lives in [`src/lib/vault-crypto.ts`](src/lib/vault-crypto.ts), [`
 
 - **Locking is basic.** A **Lock** button sits at the top of every screen, and the vault locks itself after 60 seconds in the background. Pending edits are saved before it locks. While the app is unlocked and not in the foreground, an opaque cover replaces the screen, so the iOS app-switcher snapshot shows only the app's mark and none of your data.
 - **No biometric unlock.** `expo-local-authentication` and `expo-secure-store` are installed but not used yet.
-- **Key derivation runs in JavaScript.** The iteration count (210,000) is lower than a native implementation would use and has not been benchmarked on a physical device. In a debug build on the simulator, creating the vault took roughly 20 to 30 seconds with no progress indicator. I haven't timed a release build.
+- **Key derivation is native on iOS only.** [`modules/pbkdf2-native`](modules/pbkdf2-native) wraps CommonCrypto. On an iPhone 16 release build it opened a vault in 108 ms at 210,000 iterations; the old pure-JavaScript version took about 11.2 s for the same job. Without the module (Android, web, or an iOS build made before it was added) the app falls back to the JavaScript version, which gives the same key but would take over 30 s at 600,000 iterations. Don't create a real vault on such a build.
+- **Changing the password is not safe for documents yet.** No screen calls it today, but the code that does re-keys the vault without re-encrypting stored documents, so they would stop opening. That has to be fixed before a change-password screen is added.
 - **The share sheet works on a decrypted temporary copy.** It exists on disk until the vault locks, you share another file, or the app restarts. iOS may also leave its own temporary copy of a picked file in the app's `tmp/` folder.
 - **Not audited, and not accredited** for CUI or official records. Don't put anything in it you aren't willing to risk in a prototype.
 
@@ -55,7 +56,7 @@ The checklist items, publication numbers, filing windows, and phone numbers are 
 ## Tech stack
 
 - [Expo](https://expo.dev) SDK 57, React Native 0.86, TypeScript, Expo Router (native tabs)
-- `expo-crypto` for AES-256-GCM, `@noble/hashes` for PBKDF2
+- `expo-crypto` for AES-256-GCM; a local Expo module (`modules/pbkdf2-native`, Swift) for PBKDF2, with `@noble/hashes` as the fallback
 - `expo-file-system`, `expo-document-picker`, `expo-image-picker`, `expo-sharing` for the document repository
 - State is a single React context (`VaultProvider`) that holds the decrypted data in memory and re-encrypts on a debounced save
 
@@ -70,7 +71,7 @@ npm install
 npx expo run:ios
 ```
 
-The first build compiles the native modules and takes a while. It has been built and exercised on the **iPhone 15 Pro simulator (iOS 17.4)**. Android, Expo Go, and physical devices are untested.
+The first build compiles the native modules and takes a while. It has been exercised on the iPhone 15 Pro and iPhone SE simulators and, as a release build, on one physical iPhone 16 running iOS 27.0.1. Android and Expo Go are untested. **iOS 27 note:** iOS 27 closes an app at launch unless it uses the scene lifecycle, and the iOS project that `expo prebuild` generates does not yet. The phone test needed a hand edit to the generated, gitignored `ios/` folder (an app-delegate change plus a scene manifest in `Info.plist`, using Expo's `ExpoAppSceneDelegate`). Until that is turned into a config plugin in this repo, a fresh prebuild will crash on iOS 27 devices.
 
 The simulator starts with no files to pick from. To test **Add Photo**, load an image with `xcrun simctl addmedia booted <image>`. To test **Choose File**, put a PDF in the Files app's "On My iPhone" storage.
 
@@ -80,13 +81,13 @@ The simulator starts with no files to pick from. To test **Add Photo**, load an 
 npm test
 ```
 
-51 tests (about 5 seconds, Node 22+ needed, no extra dependencies). The first 19 cover `src/lib/vault-crypto.ts`: round trip, wrong or near-miss passwords, the stored file format (random salt, no password or plaintext on disk, iteration count honored), tamper detection on ciphertext, salt, and truncation, IV freshness on every save, password change, and encryption of document bytes. I also confirmed the tests can fail by deliberately breaking the code three ways (ignoring the stored iteration count, using a fixed salt, skipping re-keying on password change) and checking that the right tests caught each.
+59 tests (about 15 seconds, Node 22+ needed, no extra dependencies). The first 27 cover `src/lib/vault-crypto.ts`: round trip, wrong or near-miss passwords, the stored file format (random salt, no password or plaintext on disk, iteration count honored), tamper detection on ciphertext, salt, and truncation, IV freshness on every save, password change, and encryption of document bytes. Eight of those cover the hand-off to native key derivation (same key from either path, including emoji and accented passwords; a vault made one way opens the other way; fallback to JavaScript when native is missing, throws, or returns the wrong length) and the iteration count (new vaults use at least 600,000; a vault made at 210,000 still opens and keeps its count when saved). I also confirmed the tests can fail by deliberately breaking the code three ways (ignoring the stored iteration count, using a fixed salt, skipping re-keying on password change) and checking that the right tests caught each.
 
 19 more tests cover `src/lib/transition-timeline.ts`, the logic behind the "Where you are" card: strict date parsing (impossible dates like 2027-02-30 are rejected), the phase boundaries, each deadline counted from a sample date, a leap-day edge case, and which missed windows get a note. Three deliberate breakages (a phase boundary off by one, the leap-day rule removed, a deadline shifted by 40 days) were each caught. The card itself was checked by eye in the simulator.
 
 13 more cover `src/lib/departure-checklist.ts`. The one that matters most pins each of the original 13 checklist items to the key its checkmark has always been saved under, so adding items can never move someone's checkmarks onto the wrong rows. The rest check that the checklist's wording and dates come from the timeline file, including that every date matches the one the "Where you are" card shows.
 
-**What they don't cover:** the app uses a native AES module that doesn't exist in Node, so the tests run against a stand-in built on `node:crypto` that follows the same IV + ciphertext + tag format. They verify this repo's logic, not the native module, and they don't replace testing on a device. The vault context (saving, locking) and the screens have no automated tests yet.
+**What they don't cover:** the app uses a native AES module that doesn't exist in Node, so the tests run against a stand-in built on `node:crypto` that follows the same IV + ciphertext + tag format. The same applies to the Swift key-derivation module, which is stood in for by `node:crypto`'s PBKDF2. They verify this repo's logic, not the native modules, and they don't replace testing on a device. The Swift module itself was checked on the phone: it opened a vault that had been created with the JavaScript version, which proves both give the same key. The vault context (saving, locking) and the screens have no automated tests yet.
 
 ## Roadmap (not built yet)
 

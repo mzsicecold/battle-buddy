@@ -1,23 +1,30 @@
 /**
  * Encryption for the Battle Buddy vault.
  *
- * Key derivation (PBKDF2-HMAC-SHA256) runs in pure JS via @noble/hashes, since
- * expo-crypto has no KDF of its own. The actual bulk cipher (AES-256-GCM) uses
- * expo-crypto's native implementation, which is both faster and backed by the
- * platform's own crypto library (CryptoKit on iOS) rather than a JS AES loop.
+ * Key derivation (PBKDF2-HMAC-SHA256) uses modules/pbkdf2-native on iOS, which calls
+ * the system's CommonCrypto, since expo-crypto has no KDF of its own. Where that module
+ * is missing it falls back to pure JS via @noble/hashes, which gives the same key but is
+ * far slower. The actual bulk cipher (AES-256-GCM) uses expo-crypto's native
+ * implementation, backed by the platform's own crypto library (CryptoKit on iOS).
  *
- * PBKDF2_ITERATIONS is intentionally lower than the 600,000 used in the web
- * prototype: that number assumed a browser's native (C++) PBKDF2. Here the KDF
- * itself is pure JS, so the same iteration count would cost noticeably more
- * wall-clock time on a phone CPU. Re-benchmark on-device before shipping and
- * adjust so unlock stays comfortably under ~1s.
+ * Measured on an iPhone 16 release build at 210,000 iterations: the JS version took about
+ * 11.2 s to create or unlock a vault, the native module about 0.1 s. Each vault file stores
+ * its own iteration count, so changing PBKDF2_ITERATIONS only affects vaults created afterwards.
  */
 import * as Crypto from 'expo-crypto';
 import { pbkdf2Async } from '@noble/hashes/pbkdf2.js';
 import { sha256 } from '@noble/hashes/sha2.js';
 import { bytesToHex, hexToBytes, utf8ToBytes } from '@noble/hashes/utils.js';
 
-export const PBKDF2_ITERATIONS = 210_000;
+import { nativePbkdf2Sha256Hex } from '../../modules/pbkdf2-native/src/index.ts';
+
+/**
+ * Used for vaults created from now on (current OWASP guidance for PBKDF2-HMAC-SHA256 is 600,000).
+ * Vaults made earlier keep the count stored in their file, which was 210,000.
+ * With the native module this takes about 0.3 s on an iPhone 16; the JavaScript fallback would take
+ * over 30 s, so a build without the module should not be used for real vaults.
+ */
+export const PBKDF2_ITERATIONS = 600_000;
 const SALT_BYTES = 16;
 
 /** Shape persisted to disk. Never contains the password or the derived key. */
@@ -27,14 +34,31 @@ export interface VaultFile {
   combinedB64: string;
 }
 
+const KEY_BYTES = 32;
+
+/**
+ * The native module (iOS) and @noble/hashes compute the same PBKDF2-HMAC-SHA256, so a vault keyed
+ * by either one opens with the other. Native takes well under a second; the JavaScript version took
+ * about 11 seconds for 210,000 iterations on an iPhone 16 release build (over 30 s at the current
+ * 600,000), so it is only the fallback
+ * for builds without the module (Android, web) or if the native call fails.
+ */
+async function pbkdf2Key(password: string, saltHex: string, iterations: number): Promise<Uint8Array> {
+  try {
+    const hex = await nativePbkdf2Sha256Hex(password, saltHex, iterations, KEY_BYTES);
+    if (hex !== null && hex.length === KEY_BYTES * 2) return hexToBytes(hex);
+  } catch {
+    // Fall through to the JavaScript implementation, which gives the same key.
+  }
+  return pbkdf2Async(sha256, password, hexToBytes(saltHex), { dkLen: KEY_BYTES, c: iterations });
+}
+
 export async function deriveKey(
   password: string,
   saltHex: string,
   iterations: number
 ): Promise<Crypto.AESEncryptionKey> {
-  const salt = hexToBytes(saltHex);
-  const keyBytes = await pbkdf2Async(sha256, password, salt, { dkLen: 32, c: iterations });
-  return Crypto.AESEncryptionKey.import(keyBytes);
+  return Crypto.AESEncryptionKey.import(await pbkdf2Key(password, saltHex, iterations));
 }
 
 async function encryptWithKey(key: Crypto.AESEncryptionKey, data: unknown): Promise<string> {

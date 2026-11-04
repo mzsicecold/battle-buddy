@@ -9,13 +9,36 @@
  * on any change). So they verify THIS repo's logic -- salting, key derivation, stored format, password
  * change, error handling -- against a faithful AES-GCM implementation. They do not test the native
  * module itself, and they do not replace testing on a device.
+ *
+ * The same goes for modules/pbkdf2-native (the iOS key derivation): it is replaced by a stand-in built
+ * on node:crypto's pbkdf2Sync, switched on and off per test. That checks the hand-off in vault-crypto.ts
+ * (same key from either path, fallback when native is missing, fails, or returns something unusable).
+ * The Swift code itself is only proven on a device: see "Native key derivation" in the README.
  */
 import assert from 'node:assert/strict';
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
-import { before, describe, it, mock } from 'node:test';
+import { createCipheriv, createDecipheriv, pbkdf2Sync, randomBytes } from 'node:crypto';
+import { afterEach, before, describe, it, mock } from 'node:test';
 
 const IV_BYTES = 12;
 const TAG_BYTES = 16;
+
+type NativeBehavior = 'absent' | 'works' | 'throws' | 'wrong-length';
+let nativeBehavior: NativeBehavior = 'absent';
+let nativeCalls = 0;
+
+async function nativePbkdf2Sha256Hex(
+  password: string,
+  saltHex: string,
+  iterations: number,
+  keyLength: number
+): Promise<string | null> {
+  if (nativeBehavior === 'absent') return null;
+  nativeCalls++;
+  if (nativeBehavior === 'throws') throw new Error('native module failed');
+  const key = pbkdf2Sync(password, Buffer.from(saltHex, 'hex'), iterations, keyLength, 'sha256').toString('hex');
+  if (nativeBehavior === 'wrong-length') return key.slice(0, 10);
+  return key;
+}
 
 class StandInKey {
   readonly bytes: Uint8Array;
@@ -81,7 +104,15 @@ before(async () => {
       getRandomBytesAsync,
     },
   });
+  mock.module('../modules/pbkdf2-native/src/index.ts', {
+    exports: { nativePbkdf2Sha256Hex, hasNativePbkdf2: true },
+  });
   vc = await import('../src/lib/vault-crypto.ts');
+});
+
+afterEach(() => {
+  nativeBehavior = 'absent';
+  nativeCalls = 0;
 });
 
 const SAMPLE = {
@@ -251,5 +282,92 @@ describe('file bytes (documents)', () => {
     const key = await keyFor('k1');
     const sealed = await vc.encryptBytes(key, new Uint8Array(0));
     assert.equal((await vc.decryptBytes(key, sealed)).length, 0);
+  });
+});
+
+describe('native key derivation hand-off', () => {
+  // A modest count keeps these quick; the hand-off does not depend on the number.
+  const ITERATIONS = 5000;
+  const SALT = '00112233445566778899aabbccddeeff';
+  const keyBytes = async (password: string) => (await vc.deriveKey(password, SALT, ITERATIONS) as unknown as { bytes: Uint8Array }).bytes;
+
+  it('gives the same key whether native or JavaScript derives it', async () => {
+    nativeBehavior = 'absent';
+    const viaJs = Buffer.from(await keyBytes(PASSWORD)).toString('hex');
+    nativeBehavior = 'works';
+    const viaNative = Buffer.from(await keyBytes(PASSWORD)).toString('hex');
+    assert.equal(nativeCalls, 1, 'native path should have been used');
+    assert.equal(viaNative, viaJs);
+  });
+
+  it('gives the same key for non-ASCII passwords, including emoji and accents', async () => {
+    for (const pw of ['pässwörd-ünïcode', 'пароль-密码-🔐🔑', 'a'.repeat(300)]) {
+      nativeBehavior = 'absent';
+      const viaJs = Buffer.from(await keyBytes(pw)).toString('hex');
+      nativeBehavior = 'works';
+      const viaNative = Buffer.from(await keyBytes(pw)).toString('hex');
+      assert.equal(viaNative, viaJs, pw);
+    }
+  });
+
+  it('opens a vault made by the JavaScript path using the native path, and the reverse', async () => {
+    nativeBehavior = 'absent';
+    const jsMade = await vc.createVault(PASSWORD, SAMPLE);
+    nativeBehavior = 'works';
+    const { data } = await vc.unlockVault<typeof SAMPLE>(PASSWORD, jsMade.file);
+    assert.deepEqual(data, SAMPLE);
+
+    const nativeMade = await vc.createVault(PASSWORD, SAMPLE);
+    assert.ok(nativeCalls >= 2);
+    nativeBehavior = 'absent';
+    const back = await vc.unlockVault<typeof SAMPLE>(PASSWORD, nativeMade.file);
+    assert.deepEqual(back.data, SAMPLE);
+  });
+
+  it('still rejects a wrong password on the native path', async () => {
+    nativeBehavior = 'works';
+    const { file } = await vc.createVault(PASSWORD, SAMPLE);
+    await assert.rejects(vc.unlockVault('not the password', file));
+  });
+
+  it('falls back to JavaScript, with the same key, when the native call throws', async () => {
+    nativeBehavior = 'absent';
+    const expected = Buffer.from(await keyBytes(PASSWORD)).toString('hex');
+    nativeBehavior = 'throws';
+    const actual = Buffer.from(await keyBytes(PASSWORD)).toString('hex');
+    assert.equal(nativeCalls, 1, 'native was tried first');
+    assert.equal(actual, expected);
+  });
+
+  it('falls back to JavaScript when native returns a result of the wrong length', async () => {
+    nativeBehavior = 'absent';
+    const expected = Buffer.from(await keyBytes(PASSWORD)).toString('hex');
+    nativeBehavior = 'wrong-length';
+    const actual = Buffer.from(await keyBytes(PASSWORD)).toString('hex');
+    assert.equal(actual, expected);
+  });
+});
+
+describe('iteration count', () => {
+  it('uses at least 600,000 iterations for new vaults', async () => {
+    assert.ok(vc.PBKDF2_ITERATIONS >= 600_000);
+    nativeBehavior = 'works';
+    const { file } = await vc.createVault(PASSWORD, SAMPLE);
+    assert.equal(file.iterations, vc.PBKDF2_ITERATIONS);
+  });
+
+  it('still opens a vault made earlier with 210,000 iterations, and keeps that count when saving', async () => {
+    // Built by hand the way the app did before the count was raised.
+    const saltHex = 'a1b2c3d4e5f60718293a4b5c6d7e8f90';
+    const key = await vc.deriveKey(PASSWORD, saltHex, 210_000);
+    const legacy = await vc.saveVault(key, saltHex, 210_000, SAMPLE);
+
+    const { data, key: unlocked } = await vc.unlockVault<typeof SAMPLE>(PASSWORD, legacy);
+    assert.deepEqual(data, SAMPLE);
+
+    const resaved = await vc.saveVault(unlocked, legacy.saltHex, legacy.iterations, { ...SAMPLE, note: 'edited' });
+    assert.equal(resaved.iterations, 210_000);
+    const reopened = await vc.unlockVault<typeof SAMPLE>(PASSWORD, resaved);
+    assert.equal(reopened.data.note, 'edited');
   });
 });
