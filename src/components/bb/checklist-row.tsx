@@ -6,11 +6,13 @@ import { useTheme } from '@/hooks/use-theme';
 
 interface ChecklistRowProps {
   label: string;
+  /** Dates or other detail shown in smaller text under the label. */
+  notes?: string[];
   checked: boolean;
   onToggle: () => void;
 }
 
-export function ChecklistRow({ label, checked, onToggle }: ChecklistRowProps) {
+export function ChecklistRow({ label, notes, checked, onToggle }: ChecklistRowProps) {
   const theme = useTheme();
   return (
     <Pressable onPress={onToggle} style={[styles.row, { borderTopColor: theme.borderSoft }]}>
@@ -28,12 +30,19 @@ export function ChecklistRow({ label, checked, onToggle }: ChecklistRowProps) {
           </ThemedText>
         ) : null}
       </View>
-      <ThemedText
-        type="small"
-        themeColor={checked ? 'textFaint' : 'text'}
-        style={checked ? styles.doneLabel : undefined}>
-        {label}
-      </ThemedText>
+      <View style={styles.text}>
+        <ThemedText
+          type="small"
+          themeColor={checked ? 'textFaint' : 'text'}
+          style={checked ? styles.doneLabel : undefined}>
+          {label}
+        </ThemedText>
+        {notes?.map((note) => (
+          <ThemedText key={note} type="small" themeColor="textFaint">
+            {note}
+          </ThemedText>
+        ))}
+      </View>
     </Pressable>
   );
 }
@@ -54,6 +63,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  text: { flex: 1, gap: 2 },
   check: { fontSize: 12, lineHeight: 14 },
   doneLabel: { textDecorationLine: 'line-through' },
 });

@@ -45,18 +45,22 @@ const SAVE_DEBOUNCE_MS = 300;
 const AUTO_LOCK_MS = 60_000;
 
 export function VaultProvider({ children }: { children: React.ReactNode }) {
-  const [status, setStatus] = useState<VaultStatus>('checking');
+  // The vault file is read synchronously, so the first render already knows whether to show unlock or create.
+  const [vaultFile, setVaultFile] = useState<VaultFile | null>(() => readVaultFile());
+  const [status, setStatus] = useState<VaultStatus>(() => (vaultFile ? 'locked' : 'no-vault'));
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<AppData | null>(null);
-  const [vaultFile, setVaultFile] = useState<VaultFile | null>(null);
   const [key, setKey] = useState<Crypto.AESEncryptionKey | null>(null);
 
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSave = useRef<AppData | null>(null);
   const keyRef = useRef<Crypto.AESEncryptionKey | null>(null);
   const vaultFileRef = useRef<VaultFile | null>(null);
-  keyRef.current = key;
-  vaultFileRef.current = vaultFile;
+  // Mirror state into refs after each commit so callbacks (auto-lock, flush) read the latest key and file.
+  useEffect(() => {
+    keyRef.current = key;
+    vaultFileRef.current = vaultFile;
+  }, [key, vaultFile]);
 
   /** Encrypts and writes `next`. Takes the key and file as arguments so it still works after lock() clears state. */
   const persist = useCallback(
@@ -90,13 +94,6 @@ export function VaultProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Clear decrypted share copies left behind if the app was killed mid-share.
     clearShareCopies();
-    const existing = readVaultFile();
-    if (existing) {
-      setVaultFile(existing);
-      setStatus('locked');
-    } else {
-      setStatus('no-vault');
-    }
   }, []);
 
   const clearError = useCallback(() => setError(null), []);

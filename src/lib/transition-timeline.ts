@@ -12,6 +12,20 @@
 
 export const TIMELINE_LAST_VERIFIED = '2026-11-01';
 
+/** The day counts every deadline is built from. The Departure checklist words its items from these too. */
+export const RULES = {
+  tapDaysBefore: 365,
+  skillbridgeDaysBefore: 180,
+  bddOpenDaysBefore: 180,
+  bddCloseDaysBefore: 90,
+  shaDaysBefore: 90,
+  sgliDaysAfter: 120,
+  tampDaysAfter: 180,
+  chcbpApplyDays: 60,
+  vgliNoHealthDaysAfter: 240,
+  vgliProofExtraDays: 120,
+} as const;
+
 const DAY_MS = 86_400_000;
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -120,34 +134,34 @@ export function milestonesFor(ets: number): Milestone[] {
     {
       id: 'tap',
       label: 'Start TAP counseling by',
-      detail: 'Must begin no later than 365 days before separation. Retirees can usually start up to 2 years out.',
-      day: ets - 365,
+      detail: `Must begin no later than ${RULES.tapDaysBefore} days before separation. Retirees can usually start up to 2 years out.`,
+      day: ets - RULES.tapDaysBefore,
       passedNote: 'TAP start date has passed. Ask your transition office to start as soon as possible.',
     },
     {
       id: 'skillbridge-open',
       label: 'SkillBridge earliest start',
-      detail: 'No earlier than 180 days before separation, and it needs command approval. Not available to everyone.',
-      day: ets - 180,
+      detail: `No earlier than ${RULES.skillbridgeDaysBefore} days before separation, and it needs command approval. Not available to everyone.`,
+      day: ets - RULES.skillbridgeDaysBefore,
     },
     {
       id: 'bdd-open',
       label: 'BDD claim window opens',
-      detail: 'File 180 to 90 days before separation. Needs a known separation date, your service treatment records, and the SHA Part A.',
-      day: ets - 180,
+      detail: `File ${RULES.bddOpenDaysBefore} to ${RULES.bddCloseDaysBefore} days before separation. Needs a known separation date, your service treatment records, and the SHA Part A.`,
+      day: ets - RULES.bddOpenDaysBefore,
     },
     {
       id: 'bdd-close',
       label: 'BDD claim window closes',
-      detail: 'With fewer than 90 days left BDD is closed. You can still file a standard claim after separation.',
-      day: ets - 90,
+      detail: `With fewer than ${RULES.bddCloseDaysBefore} days left BDD is closed. You can still file a standard claim after separation.`,
+      day: ets - RULES.bddCloseDaysBefore,
       passedNote: 'BDD is closed. A standard claim is still possible after separation. A Veterans Service Officer can help.',
     },
     {
       id: 'sha-dental',
       label: 'Final health assessment and dental exam scheduled by',
-      detail: 'Must be scheduled no later than 90 days before separation.',
-      day: ets - 90,
+      detail: `Must be scheduled no later than ${RULES.shaDaysBefore} days before separation.`,
+      day: ets - RULES.shaDaysBefore,
       passedNote: 'If this date has passed, ask your transition office what is still possible.',
     },
     {
@@ -159,26 +173,26 @@ export function milestonesFor(ets: number): Milestone[] {
     {
       id: 'sgli-end',
       label: 'Free SGLI coverage ends',
-      detail: 'SGLI continues free for 120 days after you leave. Totally disabled members can apply to extend it up to 2 years.',
-      day: ets + 120,
+      detail: `SGLI continues free for ${RULES.sgliDaysAfter} days after you leave. Totally disabled members can apply to extend it up to 2 years.`,
+      day: ets + RULES.sgliDaysAfter,
     },
     {
       id: 'sgli-convert',
       label: 'Convert SGLI to an individual policy by',
-      detail: 'Within 120 days of separation, with no proof of health needed.',
-      day: ets + 120,
+      detail: `Within ${RULES.sgliDaysAfter} days of separation, with no proof of health needed.`,
+      day: ets + RULES.sgliDaysAfter,
     },
     {
       id: 'tamp-end',
       label: 'TAMP coverage ends (if you qualify)',
-      detail: '180 days of transitional TRICARE, for certain separations only. Check DEERS or milConnect. Then CHCBP must be bought within 60 days of losing TRICARE or TAMP.',
-      day: ets + 180,
+      detail: `${RULES.tampDaysAfter} days of transitional TRICARE, for certain separations only. Check DEERS or milConnect. Then CHCBP must be bought within ${RULES.chcbpApplyDays} days of losing TRICARE or TAMP.`,
+      day: ets + RULES.tampDaysAfter,
     },
     {
       id: 'vgli-nohealth',
       label: 'VGLI with no health questions by',
-      detail: 'Apply within 240 days of separation to skip the health questions.',
-      day: ets + 240,
+      detail: `Apply within ${RULES.vgliNoHealthDaysAfter} days of separation to skip the health questions.`,
+      day: ets + RULES.vgliNoHealthDaysAfter,
     },
     {
       id: 'va-claim',
@@ -189,8 +203,8 @@ export function milestonesFor(ets: number): Milestone[] {
     {
       id: 'vgli-last',
       label: 'Last day to apply for VGLI (proof of health required)',
-      detail: 'From day 121 to 1 year and 120 days after separation you must show proof of good health. After that, applications are not accepted.',
-      day: addYears(ets, 1) + 120,
+      detail: `From day ${RULES.sgliDaysAfter + 1} to 1 year and ${RULES.vgliProofExtraDays} days after separation you must show proof of good health. After that, applications are not accepted.`,
+      day: addYears(ets, 1) + RULES.vgliProofExtraDays,
     },
   ];
   return list.sort((a, b) => a.day - b.day);

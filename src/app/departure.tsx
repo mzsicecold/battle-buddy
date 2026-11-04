@@ -15,22 +15,8 @@ import { ThemeColor, BottomTabInset, Spacing } from '@/constants/theme';
 import { useVault } from '@/context/vault-context';
 import { useTheme } from '@/hooks/use-theme';
 import { BddEntry, BddStatus, uid } from '@/lib/app-data';
-
-const CHECKLIST_ITEMS = [
-  'Attend Transition Assistance Program (TAP) — start no later than 365 days before separation',
-  'Schedule Separation Health Assessment (SHA) and dental exam — no later than 90 days before separation',
-  'Compile complete medical & dental records for your BDD claim',
-  'File BDD claim (180–90 days before separation)',
-  'Review your DD 214 for accuracy',
-  'Update SGLI / life insurance beneficiaries',
-  'Schedule household goods move (if applicable)',
-  'Out-process finance — final pay & travel voucher',
-  'Confirm TRICARE / VA health coverage transition',
-  'Update address & family info in DEERS',
-  'Request transcripts / JST for education benefits',
-  'Review GI Bill transfer or usage plan (transfers must be requested while you are still serving)',
-  'Attend final out-processing appointment',
-];
+import { checklistFor, countDone } from '@/lib/departure-checklist';
+import { parseDay, todayDay } from '@/lib/transition-timeline';
 
 const BDD_STATUSES: readonly BddStatus[] = ['Scheduled', 'Completed', 'Awaiting Report'];
 
@@ -56,11 +42,11 @@ export default function DepartureScreen() {
   const [bddStatus, setBddStatus] = useState<BddStatus>('Scheduled');
 
   if (!data) return null;
-  const { checklist, bdd } = data;
-  const doneCount = CHECKLIST_ITEMS.filter((_, i) => checklist[`c${i}`]).length;
+  const { checklist, bdd, profile } = data;
+  const items = checklistFor(profile.ets, todayDay());
+  const hasDate = parseDay(profile.ets) !== null;
 
-  const toggleItem = (i: number) => {
-    const key = `c${i}`;
+  const toggleItem = (key: string) => {
     updateData((d) => ({ ...d, checklist: { ...d.checklist, [key]: !d.checklist[key] } }));
   };
 
@@ -90,9 +76,20 @@ export default function DepartureScreen() {
           description="Checklist for separation or retirement, and a place to track your BDD appointments and how each one went."
         />
 
-        <Card title="Separation / Retirement Checklist" hint={`${doneCount} / ${CHECKLIST_ITEMS.length} complete`}>
-          {CHECKLIST_ITEMS.map((item, i) => (
-            <ChecklistRow key={item} label={item} checked={!!checklist[`c${i}`]} onToggle={() => toggleItem(i)} />
+        <Card title="Separation / Retirement Checklist" hint={`${countDone(checklist)} / ${items.length} complete`}>
+          {!hasDate && (
+            <ThemedText type="small" themeColor="textSecondary">
+              Add your ETS / EAS date on the Service tab to see due dates under each item.
+            </ThemedText>
+          )}
+          {items.map((item) => (
+            <ChecklistRow
+              key={item.key}
+              label={item.label}
+              notes={item.notes}
+              checked={!!checklist[item.key]}
+              onToggle={() => toggleItem(item.key)}
+            />
           ))}
         </Card>
 
