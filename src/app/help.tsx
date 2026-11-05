@@ -5,19 +5,12 @@ import { Card } from '@/components/bb/card';
 import { Field } from '@/components/bb/field';
 import { Resource, ResourceCard } from '@/components/bb/resource-card';
 import { ScreenHeader } from '@/components/bb/screen-header';
+import { VETERANS_CRISIS_LINE } from '@/constants/crisis-resources';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useVault } from '@/context/vault-context';
 
 const CRISIS_RESOURCES: Resource[] = [
-  {
-    name: 'Veterans / Military Crisis Line',
-    detail: 'Dial 988, then press 1 · Text 838255 · Confidential chat at VeteransCrisisLine.net',
-    actions: [
-      { label: 'Call 988', url: 'tel:988' },
-      { label: 'Text', url: 'sms:838255' },
-    ],
-    crisis: true,
-  },
+  VETERANS_CRISIS_LINE,
   {
     name: 'DoD Safe Helpline (SAPR)',
     detail: 'Sexual assault support — confidential, 24/7 · Text your base or ZIP to 55-247 to find local responders',

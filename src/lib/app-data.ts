@@ -64,6 +64,8 @@ export interface JournalEntry {
   date: string;
   mood: string;
   text: string;
+  /** Workbook phase (1 to 5) the person was in when they wrote it. Absent on older entries and when no ETS date was set. */
+  phase?: number;
 }
 
 export type BddStatus = 'Scheduled' | 'Completed' | 'Awaiting Report';
