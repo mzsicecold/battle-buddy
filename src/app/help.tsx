@@ -5,7 +5,7 @@ import { Card } from '@/components/bb/card';
 import { Field } from '@/components/bb/field';
 import { Resource, ResourceCard } from '@/components/bb/resource-card';
 import { ScreenHeader } from '@/components/bb/screen-header';
-import { VETERANS_CRISIS_LINE } from '@/constants/crisis-resources';
+import { IN_TRANSITION, VETERANS_CRISIS_LINE } from '@/constants/crisis-resources';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useVault } from '@/context/vault-context';
 
@@ -23,6 +23,7 @@ const CRISIS_RESOURCES: Resource[] = [
 ];
 
 const SUPPORT_RESOURCES: Resource[] = [
+  IN_TRANSITION,
   {
     name: 'Military OneSource',
     detail: 'Free counseling, financial coaching, and referrals for service members and families',
