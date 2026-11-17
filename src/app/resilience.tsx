@@ -11,7 +11,7 @@ import { Pill } from '@/components/bb/pill';
 import { Resource, ResourceCard } from '@/components/bb/resource-card';
 import { ScreenHeader } from '@/components/bb/screen-header';
 import { ThemedText } from '@/components/themed-text';
-import { VETERANS_CRISIS_LINE } from '@/constants/crisis-resources';
+import { IN_TRANSITION, VETERANS_CRISIS_LINE } from '@/constants/crisis-resources';
 import { BottomTabInset, Spacing } from '@/constants/theme';
 import { useVault } from '@/context/vault-context';
 import { useTheme } from '@/hooks/use-theme';
@@ -30,6 +30,7 @@ import { getTransition, todayDay } from '@/lib/transition-timeline';
 
 const MENTAL_HEALTH_RESOURCES: Resource[] = [
   VETERANS_CRISIS_LINE,
+  IN_TRANSITION,
   {
     name: 'Military OneSource Non-Medical Counseling',
     detail: 'Free, confidential, up to 12 sessions per issue — in person, phone, or video',

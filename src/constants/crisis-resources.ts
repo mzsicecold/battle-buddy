@@ -10,3 +10,11 @@ export const VETERANS_CRISIS_LINE: Resource = {
   ],
   crisis: true,
 };
+
+/** Not a crisis line: coaching that connects people to mental health care during and after separation. Added on a clinician's advice, 2026-11. */
+export const IN_TRANSITION: Resource = {
+  name: 'inTransition (Military Health System)',
+  detail:
+    'Free, confidential coaching that connects you to mental health care as you leave service and after · Open to all service members, veterans, and retirees · 800-424-7877',
+  actions: [{ label: 'Call', url: 'tel:8004247877' }],
+};
